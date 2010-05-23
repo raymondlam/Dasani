@@ -2,27 +2,101 @@
 <!-- controls\videodisplay\VideoDisplayCamera.mxml -->
 <s:Application xmlns:fx="http://ns.adobe.com/mxml/2009"
 			   xmlns:s="library://ns.adobe.com/flex/spark" 
-			   xmlns:mx="library://ns.adobe.com/flex/mx">
-	
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   applicationComplete="init();">
 	
 	<fx:Script>
 		<![CDATA[
-			private var connectUrl:String = "rtmfp://stratus.adobe.com";
-			// Define a variable of type Camera.
-			import flash.media.Camera;
-			public var cam:Camera;
-			public var mic:Microphone;
+			import mx.core.UIComponent;
+			private var nc:NetConnection;
+			private var rtmfpServer:String = 'rtmfp://stratus.adobe.com/5342dc2d4d77bfc9df7d3562-a032782fce1a';
+			private var sendNS:NetStream;
+			private var neerPeerID:String;
 			
-			public function initCamera():void {
-				// Initialize the variable.
-				cam = Camera.getCamera();
-				mic = Microphone.getMicrophone();
-				myVid.attachCamera(cam)
+			private var cam:Camera;
+			private var mic:Microphone;
+			
+			private function init():void {
+				initCamera();
+				initNetConnection();
+			}
+			
+			private function initCamera():void {
+				if (Camera.names.length > 0) { 
+					cam = Camera.getCamera();
+					cam.setQuality(0,100);
+					my_video_display.attachCamera(cam);
+				}
+				
+				if (Microphone.names.length > 0) {
+					mic = Microphone.getMicrophone();
+				}
+			}
+			
+			private function initNetConnection():void {
+				nc = new NetConnection();
+				nc.addEventListener(NetStatusEvent.NET_STATUS, netStatusEvent);
+				nc.connect(rtmfpServer);
+			}
+			
+			private function netStatusEvent(event:NetStatusEvent):void {
+				trace('NetConnection status event (1): ' + event.info.code);
+				if (event.info.code == 'NetConnection.Connect.Success') {
+					neerPeerID = nc.nearID;
+					farPeerId_text.text = neerPeerID;
+					initSendNetStream();
+					add_contact_container.visible = true;
+				}
+			}
+			
+			private function initSendNetStream():void {
+				sendNS = new NetStream(nc, NetStream.DIRECT_CONNECTIONS);
+				sendNS.addEventListener(NetStatusEvent.NET_STATUS, netStatusEvent);
+				
+				var clientObject:Object = new Object();
+				clientObject.onPeerConnect = function(ns:NetStream):Boolean {return true;}
+				
+				sendNS.client = clientObject;
+				sendNS.attachCamera(cam);
+				sendNS.attachAudio(mic);
+				sendNS.publish('video');
+			}
+			
+			private function addContact():void {
+				var nc2:NetConnection = new NetConnection();
+				nc2.addEventListener(NetStatusEvent.NET_STATUS, function (event:NetStatusEvent):void {
+					trace('NetConnection status event (2): ' + event.info.code);
+					var receiveNS:NetStream = new NetStream(nc2, contact_peer_id_text.text);
+					receiveNS.addEventListener(NetStatusEvent.NET_STATUS, netStatusEvent);
+					receiveNS.play('video');
+					
+					var video:Video = new Video();
+					video.attachNetStream(receiveNS);
+					
+					var uic:UIComponent = new UIComponent();
+					uic.width = 320;
+					uic.height = 240;
+					uic.addChild(video);
+					video_stack.addChild(uic);
+					
+					contact_peer_id_text.text = '';
+				});
+				nc2.connect(rtmfpServer);
 			}
 		]]>
 	</fx:Script>
-	<mx:VideoDisplay id="myVid" 
-					 width="320" height="240" 
-					 creationComplete="initCamera();"/>	
+	
+	<mx:HBox id="video_stack" top="10" left="10">
+		<mx:VBox>
+			<mx:VideoDisplay id="my_video_display" width="320" height="240"/>
+			<mx:HBox>
+				<mx:TextInput width="320" id="farPeerId_text" text="Your Peer ID is loading..."/>
+			</mx:HBox>
+			<mx:HBox id="add_contact_container" visible="false">
+				<mx:TextInput id="contact_peer_id_text" width="200"/>
+				<mx:Button label="Add contact" click="{addContact();}"/>	
+			</mx:HBox>
+		</mx:VBox>
+	</mx:HBox>
 	
 </s:Application>
